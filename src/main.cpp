@@ -19,6 +19,7 @@ namespace {
 
 constexpr const char *kManifestPath = "exercises/manifest.txt";
 constexpr const char *kNotDoneMarker = "I AM NOT DONE";
+constexpr const char *kWorkRoot = ".cpplings/work";
 
 struct Exercise {
     std::string name;
@@ -175,8 +176,48 @@ int run_command(const std::string &command) {
     return std::system(command.c_str());
 }
 
+fs::path template_path(const fs::path &root, const Exercise &exercise) {
+    return root / exercise.path;
+}
+
+fs::path work_path(const fs::path &root, const Exercise &exercise) {
+    return root / kWorkRoot / exercise.path;
+}
+
+int initialize_work_tree(const fs::path &root,
+                         const std::vector<Exercise> &exercises,
+                         bool overwrite_existing) {
+    int copied = 0;
+
+    for (const Exercise &exercise : exercises) {
+        const fs::path from = template_path(root, exercise);
+        const fs::path to = work_path(root, exercise);
+
+        if (!fs::exists(from)) {
+            throw std::runtime_error("missing exercise template: " + from.string());
+        }
+
+        if (fs::exists(to) && !overwrite_existing) {
+            continue;
+        }
+
+        fs::create_directories(to.parent_path());
+        fs::copy_file(
+            from,
+            to,
+            overwrite_existing ? fs::copy_options::overwrite_existing : fs::copy_options::none);
+        ++copied;
+    }
+
+    return copied;
+}
+
+void ensure_work_tree(const fs::path &root, const std::vector<Exercise> &exercises) {
+    (void)initialize_work_tree(root, exercises, false);
+}
+
 RunResult run_exercise(const fs::path &root, const Exercise &exercise) {
-    const fs::path source = root / exercise.path;
+    const fs::path source = work_path(root, exercise);
 
     if (!fs::exists(source)) {
         return {false, "missing source file: " + source.string()};
@@ -234,7 +275,7 @@ RunResult check_exercise(const fs::path &root, const Exercise &exercise, bool qu
 }
 
 bool exercise_looks_done(const fs::path &root, const Exercise &exercise) {
-    const fs::path source = root / exercise.path;
+    const fs::path source = work_path(root, exercise);
     return fs::exists(source) && !has_not_done_marker(source);
 }
 
@@ -255,7 +296,7 @@ std::map<fs::path, fs::file_time_type> snapshot_exercise_times(
     std::map<fs::path, fs::file_time_type> snapshot;
 
     for (const Exercise &exercise : exercises) {
-        const fs::path path = root / exercise.path;
+        const fs::path path = work_path(root, exercise);
         if (fs::exists(path)) {
             snapshot[path] = fs::last_write_time(path);
         }
@@ -269,11 +310,13 @@ void print_help() {
         << "Cpplings: a Rustlings-style C++ exercise runner\n\n"
         << "Usage:\n"
         << "  cpplings                 Show the next exercise\n"
+        << "  cpplings init            Create missing editable exercise copies\n"
         << "  cpplings list            List exercises\n"
         << "  cpplings run <name>      Compile and run an exercise\n"
         << "  cpplings verify          Check all exercises in order\n"
         << "  cpplings next            Check the next unfinished exercise\n"
         << "  cpplings hint [name]     Show a hint\n"
+        << "  cpplings reset <name>    Reset one editable exercise copy\n"
         << "  cpplings watch           Re-run verify when exercise files change\n"
         << "  cpplings help            Show this help\n";
 }
@@ -287,7 +330,7 @@ void print_next(const fs::path &root, const std::vector<Exercise> &exercises) {
     }
 
     std::cout << "Next exercise: " << next->name << "\n";
-    std::cout << "Open: " << (root / next->path) << "\n";
+    std::cout << "Open: " << work_path(root, *next) << "\n";
     std::cout << "Run:  cpplings run " << next->name << "\n";
 }
 
@@ -296,8 +339,44 @@ int command_list(const fs::path &root, const std::vector<Exercise> &exercises) {
     for (const Exercise &exercise : exercises) {
         const bool looks_done = exercise_looks_done(root, exercise);
         std::cout << "  [" << status_label(looks_done) << "] "
-                  << exercise.name << "  " << exercise.path.string() << "\n";
+                  << exercise.name << "  " << work_path(root, exercise).string() << "\n";
     }
+    return 0;
+}
+
+int command_init(const fs::path &root, const std::vector<Exercise> &exercises) {
+    const int copied = initialize_work_tree(root, exercises, false);
+    if (copied == 0) {
+        std::cout << "Exercise work tree already exists at " << (root / kWorkRoot) << "\n";
+    } else {
+        std::cout << "Created " << copied << " editable exercise "
+                  << (copied == 1 ? "copy" : "copies")
+                  << " under " << (root / kWorkRoot) << "\n";
+    }
+    return 0;
+}
+
+int command_reset(const fs::path &root,
+                  const std::vector<Exercise> &exercises,
+                  const std::vector<std::string> &args) {
+    if (args.size() < 3) {
+        std::cerr << "usage: cpplings reset <name>\n";
+        return 2;
+    }
+
+    const std::optional<Exercise> exercise = find_exercise(exercises, args[2]);
+    if (!exercise) {
+        std::cerr << "unknown exercise: " << args[2] << "\n";
+        return 2;
+    }
+
+    const fs::path from = template_path(root, *exercise);
+    const fs::path to = work_path(root, *exercise);
+    fs::create_directories(to.parent_path());
+    fs::copy_file(from, to, fs::copy_options::overwrite_existing);
+
+    std::cout << "Reset " << exercise->name << "\n";
+    std::cout << "Open: " << to << "\n";
     return 0;
 }
 
@@ -323,7 +402,7 @@ int command_verify(const fs::path &root, const std::vector<Exercise> &exercises)
     for (const Exercise &exercise : exercises) {
         const RunResult result = check_exercise(root, exercise, false);
         if (!result.ok) {
-            std::cout << "\nOpen: " << (root / exercise.path) << "\n";
+            std::cout << "\nOpen: " << work_path(root, exercise) << "\n";
             std::cout << "Hint: cpplings hint " << exercise.name << "\n";
             return 1;
         }
@@ -340,10 +419,10 @@ int command_next(const fs::path &root, const std::vector<Exercise> &exercises) {
     }
 
     std::cout << "Next exercise: " << next->name << "\n";
-    std::cout << "Open: " << (root / next->path) << "\n";
+    std::cout << "Open: " << work_path(root, *next) << "\n";
     const RunResult result = check_exercise(root, *next, false);
     if (!result.ok) {
-        std::cout << "\nOpen: " << (root / next->path) << "\n";
+        std::cout << "\nOpen: " << work_path(root, *next) << "\n";
         std::cout << "Hint: cpplings hint " << next->name << "\n";
     }
     return result.ok ? 0 : 1;
@@ -399,10 +478,17 @@ int main(int argc, char **argv) {
     try {
         const fs::path root = find_project_root();
         const std::vector<Exercise> exercises = load_manifest(root);
+
         std::vector<std::string> args;
         for (int i = 0; i < argc; ++i) {
             args.emplace_back(argv[i]);
         }
+
+        if (args.size() > 1 && args[1] == "init") {
+            return command_init(root, exercises);
+        }
+
+        ensure_work_tree(root, exercises);
 
         if (args.size() == 1) {
             print_help();
@@ -431,6 +517,9 @@ int main(int argc, char **argv) {
         }
         if (command == "hint") {
             return command_hint(root, exercises, args);
+        }
+        if (command == "reset") {
+            return command_reset(root, exercises, args);
         }
         if (command == "watch") {
             return command_watch(root, exercises);
