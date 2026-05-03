@@ -1,0 +1,12 @@
+# name|path|standard|hint
+hello_01|exercises/intro/hello_01.cpp|c++17|Every statement in C++ ends with a semicolon. The output line is missing one.
+variables_01|exercises/basics/variables_01.cpp|c++17|The assertion tells you the value that answer must hold. Assign that value before the check runs.
+references_01|exercises/basics/references_01.cpp|c++17|Passing an int by value gives increment a copy. Change the parameter so the function receives the original variable.
+functions_01|exercises/functions/functions_01.cpp|c++17|Return a computed value from double_it instead of returning the argument unchanged.
+control_flow_01|exercises/control_flow/control_flow_01.cpp|c++17|Use the test cases in main as the specification. Pay special attention to exactly zero degrees.
+strings_01|exercises/strings/strings_01.cpp|c++17|Build one std::string containing the greeting, the name, and the punctuation expected by the assertions.
+vectors_01|exercises/vectors/vectors_01.cpp|c++17|The loop already sums the vector. Put the missing number into the vector before the loop starts.
+structs_01|exercises/structs/structs_01.cpp|c++17|A Point has two fields. Manhattan distance for these positive test values uses both of them.
+classes_01|exercises/classes/classes_01.cpp|c++17|The increment member currently computes a value and throws it away. Store the updated value back into the object.
+templates_01|exercises/templates/templates_01.cpp|c++17|The comparison operator works for both tested types. Return the larger of the two arguments.
+raii_01|exercises/raii/raii_01.cpp|c++17|RAII work often happens in a destructor. Record the exit event when the guard leaves scope.
