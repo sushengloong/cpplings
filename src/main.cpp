@@ -323,7 +323,8 @@ int command_verify(const fs::path &root, const std::vector<Exercise> &exercises)
     for (const Exercise &exercise : exercises) {
         const RunResult result = check_exercise(root, exercise, false);
         if (!result.ok) {
-            std::cout << "\nHint: cpplings hint " << exercise.name << "\n";
+            std::cout << "\nOpen: " << (root / exercise.path) << "\n";
+            std::cout << "Hint: cpplings hint " << exercise.name << "\n";
             return 1;
         }
     }
@@ -342,7 +343,8 @@ int command_next(const fs::path &root, const std::vector<Exercise> &exercises) {
     std::cout << "Open: " << (root / next->path) << "\n";
     const RunResult result = check_exercise(root, *next, false);
     if (!result.ok) {
-        std::cout << "\nHint: cpplings hint " << next->name << "\n";
+        std::cout << "\nOpen: " << (root / next->path) << "\n";
+        std::cout << "Hint: cpplings hint " << next->name << "\n";
     }
     return result.ok ? 0 : 1;
 }
