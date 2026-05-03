@@ -15,11 +15,26 @@ program that compiles and exits successfully.
 make
 ```
 
+Run tests:
+
+```sh
+make test
+```
+
+Format and lint:
+
+```sh
+make format
+make format-check
+make lint
+```
+
 Or, with CMake:
 
 ```sh
 cmake -S . -B build
 cmake --build build
+ctest --test-dir build
 ```
 
 ## Use
