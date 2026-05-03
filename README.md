@@ -50,7 +50,9 @@ of commits while preserving the starter curriculum in `exercises/`.
 
 ## Curriculum
 
-The curriculum lives in [exercises/manifest.txt](exercises/manifest.txt). Each
+The curriculum templates live under `exercises/`. The runner auto-detects
+`exercises/**/*.cpp` files. For stable ordering, custom standards, and hints,
+add entries to [exercises/manifest.txt](exercises/manifest.txt). Each manifest
 line has:
 
 ```text
@@ -70,6 +72,7 @@ The runner currently ships with a compact first pass over C++ basics:
 - templates
 - RAII
 
-Add more exercises by creating a C++ template file and adding it to the manifest.
-Existing users will receive the new exercise as a working copy the next time they
-run `cpplings`.
+Add more exercises by creating a C++ template file under `exercises/`. The
+runner will auto-detect it, append it after manifest-listed exercises, and create
+a working copy the next time users run `cpplings`. Add a manifest entry when you
+want a custom hint, C++ standard, or curriculum position.

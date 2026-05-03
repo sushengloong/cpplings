@@ -7,6 +7,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -72,6 +73,44 @@ std::string status_label(bool ready_to_check) {
     return ready_to_check ? "ready" : "pending";
 }
 
+std::string default_hint() {
+    return "No hint is registered for this exercise yet. Read the comments and assertions in the file.";
+}
+
+std::string auto_name_from_path(const fs::path &relative_path,
+                                const std::set<std::string> &used_names) {
+    std::string candidate = relative_path.stem().string();
+    if (!used_names.count(candidate)) {
+        return candidate;
+    }
+
+    std::vector<std::string> parts;
+    for (const fs::path &part : relative_path.parent_path()) {
+        if (part != "." && part != "exercises") {
+            parts.push_back(part.string());
+        }
+    }
+    parts.push_back(relative_path.stem().string());
+
+    candidate.clear();
+    for (const std::string &part : parts) {
+        if (!candidate.empty()) {
+            candidate += "_";
+        }
+        candidate += part;
+    }
+
+    if (!used_names.count(candidate)) {
+        return candidate;
+    }
+
+    int suffix = 2;
+    while (used_names.count(candidate + "_" + std::to_string(suffix))) {
+        ++suffix;
+    }
+    return candidate + "_" + std::to_string(suffix);
+}
+
 fs::path find_project_root() {
     fs::path current = fs::current_path();
 
@@ -90,6 +129,29 @@ fs::path find_project_root() {
     throw std::runtime_error("could not find exercises/manifest.txt from the current directory");
 }
 
+std::vector<fs::path> discover_exercise_templates(const fs::path &root) {
+    const fs::path exercise_root = root / "exercises";
+    std::vector<fs::path> paths;
+
+    if (!fs::exists(exercise_root)) {
+        return paths;
+    }
+
+    for (const fs::directory_entry &entry : fs::recursive_directory_iterator(exercise_root)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".cpp") {
+            continue;
+        }
+
+        paths.push_back(fs::relative(entry.path(), root));
+    }
+
+    std::sort(paths.begin(), paths.end(), [](const fs::path &left, const fs::path &right) {
+        return left.generic_string() < right.generic_string();
+    });
+
+    return paths;
+}
+
 std::vector<Exercise> load_manifest(const fs::path &root) {
     const fs::path manifest_path = root / kManifestPath;
     std::ifstream manifest(manifest_path);
@@ -99,6 +161,8 @@ std::vector<Exercise> load_manifest(const fs::path &root) {
     }
 
     std::vector<Exercise> exercises;
+    std::set<std::string> known_paths;
+    std::set<std::string> used_names;
     std::string line;
     int line_number = 0;
 
@@ -117,16 +181,44 @@ std::vector<Exercise> load_manifest(const fs::path &root) {
                 " expected name|path|standard|hint");
         }
 
+        const fs::path path = fs::path(parts[1]);
+        const std::string path_key = path.generic_string();
+
+        if (used_names.count(parts[0])) {
+            throw std::runtime_error(
+                manifest_path.string() + ":" + std::to_string(line_number) +
+                " duplicate exercise name: " + parts[0]);
+        }
+        if (known_paths.count(path_key)) {
+            throw std::runtime_error(
+                manifest_path.string() + ":" + std::to_string(line_number) +
+                " duplicate exercise path: " + path_key);
+        }
+
         exercises.push_back(Exercise{
             parts[0],
-            fs::path(parts[1]),
+            path,
             parts[2].empty() ? "c++17" : parts[2],
             parts[3],
         });
+        used_names.insert(parts[0]);
+        known_paths.insert(path_key);
+    }
+
+    for (const fs::path &path : discover_exercise_templates(root)) {
+        const std::string path_key = path.generic_string();
+        if (known_paths.count(path_key)) {
+            continue;
+        }
+
+        const std::string name = auto_name_from_path(path, used_names);
+        exercises.push_back(Exercise{name, path, "c++17", default_hint()});
+        used_names.insert(name);
+        known_paths.insert(path_key);
     }
 
     if (exercises.empty()) {
-        throw std::runtime_error("manifest does not contain any exercises");
+        throw std::runtime_error("no exercises found in manifest or exercises/**/*.cpp");
     }
 
     return exercises;
