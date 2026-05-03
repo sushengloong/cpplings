@@ -28,6 +28,7 @@ cmake --build build
 ./build/cpplings              # show the next exercise
 ./build/cpplings init         # create missing editable exercise copies
 ./build/cpplings list         # show the curriculum and working files
+./build/cpplings progress     # show marked-done progress
 ./build/cpplings run hello_01 # compile and run one exercise
 ./build/cpplings hint         # hint for the next exercise
 ./build/cpplings verify       # check exercises in order
@@ -46,7 +47,9 @@ The runner will still compile and run the file, so removing the marker is not
 enough by itself.
 
 The `.cpplings/` directory is ignored by Git, which keeps learner solutions out
-of commits while preserving the starter curriculum in `exercises/`.
+of commits while preserving the starter curriculum in `exercises/`. Progress is
+based on working copies where the `// I AM NOT DONE` marker has been removed;
+`verify` still compiles and runs the code as the real test.
 
 ## Curriculum
 

@@ -34,6 +34,13 @@ struct RunResult {
     std::string message;
 };
 
+struct Progress {
+    int total = 0;
+    int marked_done = 0;
+    int pending = 0;
+    int missing = 0;
+};
+
 std::string trim(const std::string &value) {
     const auto begin = value.find_first_not_of(" \t\r\n");
     if (begin == std::string::npos) {
@@ -371,6 +378,46 @@ bool exercise_looks_done(const fs::path &root, const Exercise &exercise) {
     return fs::exists(source) && !has_not_done_marker(source);
 }
 
+Progress calculate_progress(const fs::path &root, const std::vector<Exercise> &exercises) {
+    Progress progress;
+    progress.total = static_cast<int>(exercises.size());
+
+    for (const Exercise &exercise : exercises) {
+        const fs::path source = work_path(root, exercise);
+        if (!fs::exists(source)) {
+            ++progress.missing;
+        } else if (has_not_done_marker(source)) {
+            ++progress.pending;
+        } else {
+            ++progress.marked_done;
+        }
+    }
+
+    return progress;
+}
+
+int progress_percent(const Progress &progress) {
+    if (progress.total == 0) {
+        return 100;
+    }
+
+    return (progress.marked_done * 100) / progress.total;
+}
+
+void print_progress_summary(const Progress &progress) {
+    std::cout << "Progress: " << progress.marked_done << "/" << progress.total
+              << " marked done (" << progress_percent(progress) << "%)";
+
+    if (progress.pending > 0) {
+        std::cout << ", " << progress.pending << " pending";
+    }
+    if (progress.missing > 0) {
+        std::cout << ", " << progress.missing << " missing";
+    }
+
+    std::cout << "\n";
+}
+
 std::optional<Exercise> next_exercise(const fs::path &root,
                                       const std::vector<Exercise> &exercises) {
     for (const Exercise &exercise : exercises) {
@@ -380,6 +427,44 @@ std::optional<Exercise> next_exercise(const fs::path &root,
     }
 
     return std::nullopt;
+}
+
+void print_open_line(const fs::path &root, const Exercise &exercise) {
+    std::cout << "Open: " << work_path(root, exercise) << "\n";
+}
+
+void print_run_line(const Exercise &exercise) {
+    std::cout << "Run:  cpplings run " << exercise.name << "\n";
+}
+
+void print_hint_command_line(const Exercise &exercise) {
+    std::cout << "Hint: cpplings hint " << exercise.name << "\n";
+}
+
+void print_exercise_block(const std::string &label,
+                          const fs::path &root,
+                          const Exercise &exercise,
+                          bool include_run,
+                          bool include_hint_command) {
+    std::cout << label << ": " << exercise.name << "\n";
+    print_open_line(root, exercise);
+    if (include_run) {
+        print_run_line(exercise);
+    }
+    if (include_hint_command) {
+        print_hint_command_line(exercise);
+    }
+}
+
+void print_progress_and_next(const fs::path &root, const std::vector<Exercise> &exercises) {
+    print_progress_summary(calculate_progress(root, exercises));
+
+    const std::optional<Exercise> next = next_exercise(root, exercises);
+    if (next) {
+        print_exercise_block("Next exercise", root, *next, true, false);
+    } else {
+        std::cout << "All exercises are marked done. Run `cpplings verify` for the real test.\n";
+    }
 }
 
 std::map<fs::path, fs::file_time_type> snapshot_exercise_times(
@@ -404,6 +489,7 @@ void print_help() {
         << "  cpplings                 Show the next exercise\n"
         << "  cpplings init            Create missing editable exercise copies\n"
         << "  cpplings list            List exercises\n"
+        << "  cpplings progress        Show marked-done progress\n"
         << "  cpplings run <name>      Compile and run an exercise\n"
         << "  cpplings verify          Check all exercises in order\n"
         << "  cpplings next            Check the next unfinished exercise\n"
@@ -414,25 +500,22 @@ void print_help() {
 }
 
 void print_next(const fs::path &root, const std::vector<Exercise> &exercises) {
-    const std::optional<Exercise> next = next_exercise(root, exercises);
-
-    if (!next) {
-        std::cout << "Every exercise is missing the unfinished marker. Run `cpplings verify` for the real test.\n";
-        return;
-    }
-
-    std::cout << "Next exercise: " << next->name << "\n";
-    std::cout << "Open: " << work_path(root, *next) << "\n";
-    std::cout << "Run:  cpplings run " << next->name << "\n";
+    print_progress_and_next(root, exercises);
 }
 
 int command_list(const fs::path &root, const std::vector<Exercise> &exercises) {
+    print_progress_summary(calculate_progress(root, exercises));
     std::cout << "Exercises\n";
     for (const Exercise &exercise : exercises) {
         const bool looks_done = exercise_looks_done(root, exercise);
         std::cout << "  [" << status_label(looks_done) << "] "
                   << exercise.name << "  " << work_path(root, exercise).string() << "\n";
     }
+    return 0;
+}
+
+int command_progress(const fs::path &root, const std::vector<Exercise> &exercises) {
+    print_progress_and_next(root, exercises);
     return 0;
 }
 
@@ -445,6 +528,7 @@ int command_init(const fs::path &root, const std::vector<Exercise> &exercises) {
                   << (copied == 1 ? "copy" : "copies")
                   << " under " << (root / kWorkRoot) << "\n";
     }
+    print_progress_and_next(root, exercises);
     return 0;
 }
 
@@ -468,7 +552,8 @@ int command_reset(const fs::path &root,
     fs::copy_file(from, to, fs::copy_options::overwrite_existing);
 
     std::cout << "Reset " << exercise->name << "\n";
-    std::cout << "Open: " << to << "\n";
+    print_progress_summary(calculate_progress(root, exercises));
+    print_exercise_block("Exercise", root, *exercise, true, true);
     return 0;
 }
 
@@ -487,15 +572,23 @@ int command_run(const fs::path &root,
     }
 
     const RunResult result = check_exercise(root, *exercise, false);
+    std::cout << "\n";
+    if (result.ok) {
+        print_progress_and_next(root, exercises);
+    } else {
+        print_progress_summary(calculate_progress(root, exercises));
+        print_exercise_block("Exercise", root, *exercise, true, true);
+    }
     return result.ok ? 0 : 1;
 }
 
 int command_verify(const fs::path &root, const std::vector<Exercise> &exercises) {
+    print_progress_summary(calculate_progress(root, exercises));
     for (const Exercise &exercise : exercises) {
         const RunResult result = check_exercise(root, exercise, false);
         if (!result.ok) {
-            std::cout << "\nOpen: " << work_path(root, exercise) << "\n";
-            std::cout << "Hint: cpplings hint " << exercise.name << "\n";
+            std::cout << "\n";
+            print_exercise_block("Exercise", root, exercise, true, true);
             return 1;
         }
     }
@@ -510,12 +603,12 @@ int command_next(const fs::path &root, const std::vector<Exercise> &exercises) {
         return command_verify(root, exercises);
     }
 
-    std::cout << "Next exercise: " << next->name << "\n";
-    std::cout << "Open: " << work_path(root, *next) << "\n";
+    print_progress_summary(calculate_progress(root, exercises));
+    print_exercise_block("Next exercise", root, *next, true, false);
     const RunResult result = check_exercise(root, *next, false);
     if (!result.ok) {
-        std::cout << "\nOpen: " << work_path(root, *next) << "\n";
-        std::cout << "Hint: cpplings hint " << next->name << "\n";
+        std::cout << "\n";
+        print_hint_command_line(*next);
     }
     return result.ok ? 0 : 1;
 }
@@ -534,13 +627,14 @@ int command_hint(const fs::path &root,
     } else {
         exercise = next_exercise(root, exercises);
         if (!exercise) {
-            std::cout << "No unfinished exercise found. Try `cpplings verify`.\n";
+            print_progress_and_next(root, exercises);
             return 0;
         }
     }
 
-    std::cout << exercise->name << "\n";
-    std::cout << exercise->hint << "\n";
+    print_progress_summary(calculate_progress(root, exercises));
+    print_exercise_block("Exercise", root, *exercise, true, false);
+    std::cout << "Hint: " << exercise->hint << "\n";
     return 0;
 }
 
@@ -597,6 +691,9 @@ int main(int argc, char **argv) {
         }
         if (command == "list") {
             return command_list(root, exercises);
+        }
+        if (command == "progress") {
+            return command_progress(root, exercises);
         }
         if (command == "run") {
             return command_run(root, exercises, args);
